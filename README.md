@@ -9,4 +9,5 @@ Siam Mask Files
  
  to run 
 Place them in correct directory of Siammask
+
 python ../../tools/new-demo.py --resume SiamMask_DAVIS.pth --config config_davis.json
