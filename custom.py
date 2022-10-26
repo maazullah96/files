@@ -45,10 +45,7 @@ class ResDown(MultiStageFeature):
 
         def _params(module, mult=1):
             params = list(filter(lambda x:x.requires_grad, module.parameters()))
-            if len(params):
-                return [{'params': params, 'lr': lr * mult}]
-            else:
-                return []
+            return [{'params': params, 'lr': lr * mult}] if len(params) else []
 
         groups = []
         groups += _params(self.downsample)
@@ -57,8 +54,7 @@ class ResDown(MultiStageFeature):
 
     def forward(self, x):
         output = self.features(x)
-        p3 = self.downsample(output[-1])
-        return p3
+        return self.downsample(output[-1])
 
     def forward_all(self, x):
         # print(x)
@@ -138,16 +134,17 @@ class Refine(nn.Module):
             p2 = torch.nn.functional.pad(f[2], [4, 4, 4, 4])[:, :, pos[0]:pos[0] + 15, pos[1]:pos[1] + 15]
         else:
             p0 = F.unfold(f[0], (61, 61), padding=0, stride=4).permute(0, 2, 1).contiguous().view(-1, 64, 61, 61)
-            if not (pos is None): p0 = torch.index_select(p0, 0, pos)
+            if pos is not None: p0 = torch.index_select(p0, 0, pos)
             p1 = F.unfold(f[1], (31, 31), padding=0, stride=2).permute(0, 2, 1).contiguous().view(-1, 256, 31, 31)
-            if not (pos is None): p1 = torch.index_select(p1, 0, pos)
+            if pos is not None: p1 = torch.index_select(p1, 0, pos)
             p2 = F.unfold(f[2], (15, 15), padding=0, stride=1).permute(0, 2, 1).contiguous().view(-1, 512, 15, 15)
-            if not (pos is None): p2 = torch.index_select(p2, 0, pos)
+            if pos is not None: p2 = torch.index_select(p2, 0, pos)
 
-        if not(pos is None):
-            p3 = corr_feature[:, :, pos[0], pos[1]].view(-1, 256, 1, 1)
-        else:
-            p3 = corr_feature.permute(0, 2, 3, 1).contiguous().view(-1, 256, 1, 1)
+        p3 = (
+            corr_feature.permute(0, 2, 3, 1).contiguous().view(-1, 256, 1, 1)
+            if pos is None
+            else corr_feature[:, :, pos[0], pos[1]].view(-1, 256, 1, 1)
+        )
 
         out = self.deconv(p3)
         out = self.post0(F.upsample(self.h2(out) + self.v2(p2), size=(31, 31)))
@@ -188,7 +185,7 @@ class Custom(SiamMask):
     # @jit
     def track_mask(self, search=None,lists=None):
         result =[]
-        result_dict = dict()
+        result_dict = {}
         e1 = cv2.getTickCount()
         self.feat =[]
         self.corr_feat=[]
@@ -197,7 +194,7 @@ class Custom(SiamMask):
 
             self.feature, self.search = self.features.forward_all(target["x_crop"])
             rpn_pred_cls, rpn_pred_loc = self.rpn(target["zf"], self.search)
-            
+
             self.corr_feature = self.mask_model.mask.forward_corr(target["zf"], self.search)
             pred_mask = self.mask_model.mask.head(self.corr_feature)
             # result_dict["rpn_pred_cls"] = rpn_pred_cls
@@ -234,7 +231,7 @@ class Custom(SiamMask):
         # return rpn_pred_cls, rpn_pred_loc, pred_mask
 
     def track_refine(self,pos,index):
-        # pred_mask = self.refine_model(self.feature, self.corr_feature, pos=pos, test=True)
-        pred_mask = self.refine_model(self.feat[index], self.corr_feat[index], pos, test=True)
-        return pred_mask
+        return self.refine_model(
+            self.feat[index], self.corr_feat[index], pos, test=True
+        )
 

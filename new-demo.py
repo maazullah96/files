@@ -6,8 +6,8 @@ import torch.multiprocessing as mp
 import queue as Queue
 from multiprocessing import Pool
 import itertools
-from multiprocessing.dummy import Pool as ThreadPool 
-from pathos.multiprocessing import ProcessingPool  
+from multiprocessing.dummy import Pool as ThreadPool
+from pathos.multiprocessing import ProcessingPool
 # import model as modellib  
 from imageai.Detection import ObjectDetection
 import os
@@ -37,13 +37,13 @@ if __name__ == '__main__':
     detector.setModelTypeAsRetinaNet()
     detector.setModelPath( os.path.join(execution_path , "resnet50_coco_best_v2.0.1.h5"))
     detector.loadModel(detection_speed=model)
-    
+
     # Setup Model
     cfg = load_config(args)
     from custom import Custom
     siammask = Custom(anchors=cfg['anchors'])
     if args.resume:
-        assert isfile(args.resume), 'Please download {} first.'.format(args.resume)
+        assert isfile(args.resume), f'Please download {args.resume} first.'
         siammask = load_pretrain(siammask, args.resume)
 
     siammask.eval().to(device)
@@ -52,7 +52,7 @@ if __name__ == '__main__':
 
     img_files = sorted(glob.glob(join(args.base_path, '*.jp*')))
     ims = [cv2.imread(imf) for imf in img_files]
-    
+
     # cap = cv2.VideoCapture("/home/ubuntu/Desktop/Videos/nascar_01.mp4")
 
     cap = cv2.VideoCapture("/home/ubuntu/Desktop/Videos/race.mp4")
@@ -64,7 +64,7 @@ if __name__ == '__main__':
         print("Unable to open")
         exit()
     ret, frame = cap.read()
-    
+
     # Select ROI
     cv2.namedWindow("SiamMask", cv2.WND_PROP_FULLSCREEN)
     # cv2.setWindowProperty("SiamMask", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
@@ -78,11 +78,13 @@ if __name__ == '__main__':
         x,y,w,h = i
     f = 0
     toc = 0
-    while(cap.isOpened()):
+    while (cap.isOpened()):
   # Capture frame-by-frame
-      ret, frame = cap.read()
-      frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-      if ret == True:
+        ret, frame = cap.read()
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        if ret != True:
+            break
+
         tic = cv2.getTickCount()
         if f == 0:  # init
             count =0
@@ -92,11 +94,11 @@ if __name__ == '__main__':
                 target_sz = np.array([w, h])
                 s ={"target_pos":target_pos,"target_sz":target_sz,"x":x,"y":y,"w":w,"h":h}
                 targets.append(s)
-        
+
             for i in targets:
                 print(i["target_pos"])
                 print(i["target_sz"])
-                
+
             # state = siamese_init(frame,tar  siammask, cfg['hp'], device=device,targets=targets)  # init tracker
             state = siamese_init(frame, siammask, cfg['hp'], device=device,targets=targets,detector=detector)  # init tracker
             # state1 = siamese_init(frame, target_pos1, target_sz1, siammask, cfg['hp'], device=device)  # init tracker
@@ -126,41 +128,36 @@ if __name__ == '__main__':
             #     state = my_queue.get()
             #     print(state)
                 
-            
-            for i,target in enumerate(state["targets"]):
-                
+
+            for target in state["targets"]:
                 location = target['ploygon'].flatten()
                 mask = target['mask'] > state['p'].seg_thr
-                masks = (mask > 0) * 255     
+                masks = (mask > 0) * 255
                 masks = masks.astype(np.uint8)
                 frame[:, :, 2] = (mask > 0) * 255 + (mask == 0) * frame[:, :, 2]
             # frame[:, :, 2] = (mask1 > 0) * 255 + (mask1 == 0) * frame[:, :, 2]
                 cv2.polylines(frame, [np.int0(location).reshape((-1, 1, 2))], True, (0, 255, 0), 3)
-           
+
             cv2.imshow('SiamMask', frame)
-          
+
             print (time.ctime()) 
-         
+
         print("23")
-        f= f+1        
+        f= f+1
         toc += cv2.getTickCount() - tic
         toc /= cv2.getTickFrequency()
         fps = f / toc
-        
+
         # Display the resulting frame
         # cv2.imshow('Frame',frame)
-     
+
         # Press Q on keyboard to  exit
         if cv2.waitKey(25) & 0xFF == ord('q'):
           break
-     
-      # Break the loop
-      else: 
-        break
 
   #   out.release()
     # When everything done, release the video capture object
     cap.release()
-     
+
     # Closes all the frames
     cv2.destroyAllWindows()

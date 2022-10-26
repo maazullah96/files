@@ -54,8 +54,7 @@ def to_torch(ndarray):
     if type(ndarray).__module__ == 'numpy':
         return torch.from_numpy(ndarray)
     elif not torch.is_tensor(ndarray):
-        raise ValueError("Cannot convert {} to torch tensor"
-                         .format(type(ndarray)))
+        raise ValueError(f"Cannot convert {type(ndarray)} to torch tensor")
     return ndarray
 
 def im_to_torch(img):
@@ -105,13 +104,14 @@ def get_subwindow_tracking(im, model_sz, avg_chans, out_mode='torch',targets=Non
         else:
             im_patch_original = im[int(context_ymin):int(context_ymax + 1), int(context_xmin):int(context_xmax + 1), :]
 
-        if not np.array_equal(model_sz, sz):
-            im_patch = cv2.resize(im_patch_original, (model_sz, model_sz))
-        else:
-            im_patch = im_patch_original
+        im_patch = (
+            im_patch_original
+            if np.array_equal(model_sz, sz)
+            else cv2.resize(im_patch_original, (model_sz, model_sz))
+        )
 
         target["im_patch"] = im_patch
-        cv2.imwrite("im_patch {}.jpg".format(time.ctime()),im_patch)
+        cv2.imwrite(f"im_patch {time.ctime()}.jpg", im_patch)
         if target["img"]:
            target["img_patch"] = im_to_torch(target["img"])
         target["im_to_torch"] =im_to_torch(im_patch)
@@ -120,9 +120,7 @@ def get_subwindow_tracking(im, model_sz, avg_chans, out_mode='torch',targets=Non
 
 def siamese_init(im,  model, hp=None, device='cpu',targets=None,detector=None):
     custom_objects = detector.CustomObjects(car=True,person=True)
-    state = dict()
-    state['im_h'] = im.shape[0]
-    state['im_w'] = im.shape[1]
+    state = {'im_h': im.shape[0], 'im_w': im.shape[1]}
     p = TrackerConfig()
     p.update(hp, model.anchors)
 
@@ -141,8 +139,8 @@ def siamese_init(im,  model, hp=None, device='cpu',targets=None,detector=None):
     # targets.append(targe)
     # print(targets)
     BLUE = [255,255,255]
-	
-    for i,target in enumerate(targets):
+
+    for target in targets:
         wc_z =target["target_sz"][0] + p.context_amount * sum(target["target_sz"])
         hc_z =target["target_sz"][1] + p.context_amount * sum(target["target_sz"])
         target["s_z"] = round(np.sqrt(wc_z * hc_z))
@@ -155,21 +153,13 @@ def siamese_init(im,  model, hp=None, device='cpu',targets=None,detector=None):
 
     # z_f = [ net.template(Variable(target["im_to_torch"].unsqueeze(0)).to(device))  for target in targets ]  
 
-    for i,target in enumerate(targets):
+    for target in targets:
         # detections = detector.detectCustomObjectsFromImage(custom_objects=custom_objects, input_image=target["im_patch"],input_type="array", output_image_path=os.path.join("image {} custom.jpg".format(i)),output_type="file", minimum_percentage_probability=30)
         # detections = detector.detectCustomObjectsFromImage(custom_objects=custom_objects, input_image=target["img"],input_type="array", output_image_path=os.path.join(execution_path , "images.jpg"),output_type="file", minimum_percentage_probability=30)
         z = Variable(target["im_to_torch"].unsqueeze(0))
         target["zf"]= net.template(z.to(device))
-        
+
         del target["im_to_torch"]
-        # for eachObject in detections:
-        #     print(eachObject["name"] , " : ", eachObject["percentage_probability"], " : ", eachObject["box_points"] )
-        #     target["detection"] = eachObject["box_points"]
-            
-        #     print("--------------------------------")
-
-
-
     if p.windowing == 'cosine':
         window = np.outer(np.hanning(p.score_size), np.hanning(p.score_size))
     elif p.windowing == 'uniform':
@@ -210,7 +200,7 @@ def siamese_track(state, im):
 
     BLUE = [255,255,255]
     for i,target in enumerate(targets):
-       
+
 
         wc_x = target["target_sz"][1] + p.context_amount * sum(target["target_sz"])
         hc_x = target["target_sz"][0] + p.context_amount * sum(target["target_sz"]) 
@@ -233,19 +223,19 @@ def siamese_track(state, im):
     #     cv2.waitKey(1)
 
     # extract scaled crops for search region x at previous target position
-    
+
     targets = get_subwindow_tracking(im, p.instance_size, avg_chans,targets=targets)
 
     # x_crop = Variable(get_subwindow_tracking(im, target_pos, p.instance_size, round(s_x), avg_chans).unsqueeze(0))
     tracking_data_list = []
-    tracking_data = dict()
+    tracking_data = {}
 
     for target,zf in zip(targets,zf_lists):
 
         target["x_crop"] = Variable(target["im_to_torch"].unsqueeze(0))
         target["x_crop"] = target["x_crop"].to(device)
         tracking_data_list.append({"x_crop":target["x_crop"],"zf":zf})
-    
+
     if mask_enable:
         results = net.track_mask(search=targets[0]["x_crop"],lists=tracking_data_list)
         # score, delta, mask = net.track_mask(search=targets[0]["x_crop"],lists=tracking_data_list)
@@ -321,7 +311,7 @@ def siamese_track(state, im):
                     squeeze().view(p.out_size, p.out_size).cpu().data.numpy()
 
             count+=1
-            
+
             def crop_back(image, bbox, out_sz, padding=-1):
                 a = (out_sz[0] - 1) / bbox[2]
                 b = (out_sz[1] - 1) / bbox[3]
@@ -564,7 +554,7 @@ def track_vos(model, video, hp=None, mask_enable=False, refine_enable=False, mot
     else:
         object_ids = [o_id for o_id in np.unique(annos[0]) if o_id != 0]
         if len(object_ids) != len(annos_init):
-            annos_init = annos_init*len(object_ids)
+            annos_init *= len(object_ids)
     object_num = len(object_ids)
     toc = 0
     pred_masks = np.zeros((object_num, len(image_files), annos[0].shape[0], annos[0].shape[1]))-1
@@ -649,10 +639,10 @@ def main():
         from custom import Custom
         model = Custom(anchors=cfg['anchors'])
     else:
-        parser.error('invalid architecture: {}'.format(args.arch))
+        parser.error(f'invalid architecture: {args.arch}')
 
     if args.resume:
-        assert isfile(args.resume), '{} is not a valid file'.format(args.resume)
+        assert isfile(args.resume), f'{args.resume} is not a valid file'
         model = load_pretrain(model, args.resume)
     model.eval()
     device = torch.device('cuda' if (torch.cuda.is_available() and not args.cpu) else 'cpu')
@@ -661,10 +651,9 @@ def main():
     dataset = load_dataset(args.dataset)
 
     # VOS or VOT?
-    if args.dataset in ['DAVIS2016', 'DAVIS2017', 'ytb_vos'] and args.mask:
-        vos_enable = True  # enable Mask output
-    else:
-        vos_enable = False
+    vos_enable = bool(
+        args.dataset in ['DAVIS2016', 'DAVIS2017', 'ytb_vos'] and args.mask
+    )
 
     total_lost = 0  # VOT
     iou_lists = []  # VOS
